@@ -431,7 +431,7 @@
 // frontend/src/components/Participant.jsx
 
 import React, { useEffect, useRef } from 'react';
-import { User, Mic, MicOff, Video, VideoOff, PlayCircle } from 'lucide-react';
+import { User, Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { useRoomStore } from '../hooks/useRoomStore';
 import AudioVisualizer from './AudioVisualizer';
 
@@ -444,54 +444,58 @@ export default function Participant({ participant, userHasInteracted }) {
     // This effect reliably attaches the stream to the media element
     useEffect(() => {
         if (videoRef.current && video.stream) {
+            console.log(`[LOG] Participant ${name} (${id}): Attaching video stream.`);
             videoRef.current.srcObject = video.stream;
         }
-    }, [video.stream]);
-
-    useEffect(() => {
         if (audioRef.current && audio.stream) {
+            console.log(`[LOG] Participant ${name} (${id}): Attaching audio stream.`);
             audioRef.current.srcObject = audio.stream;
         }
-    }, [audio.stream]);
+    }, [video.stream, audio.stream, name, id]);
 
-    // This effect handles the actual playback logic based on the `isPlaying` state
+    // This effect handles the actual playback logic
     useEffect(() => {
         const playMedia = async (element, mediaType) => {
             if (element && element.paused) {
                 try {
+                    console.log(`[LOG] Participant ${name} (${id}): Attempting to play ${mediaType}...`);
                     await element.play();
+                    console.log(`[LOG] Participant ${name} (${id}): Successfully played ${mediaType}.`);
                 } catch (error) {
-                    if (error.name !== 'AbortError') {
-                        console.error(`[ERROR] Autoplay for ${mediaType} failed for ${name}:`, error);
-                    }
+                    // This error is expected before user interaction
+                    console.warn(`[WARN] Participant ${name} (${id}): Autoplay for ${mediaType} was blocked by the browser. This is normal.`);
                 }
             }
         };
 
-        if (userHasInteracted && !isLocal) {
-            if (video.stream && video.isPlaying) {
-                playMedia(videoRef.current, 'video');
-            }
-            if (audio.stream && audio.isPlaying) {
-                playMedia(audioRef.current, 'audio');
-            }
+        // For local user, media should play automatically
+        if (isLocal) {
+            playMedia(videoRef.current, 'local video');
+            playMedia(audioRef.current, 'local audio');
+        } 
+        // For remote users, play only after the initial user interaction
+        else if (userHasInteracted) {
+            playMedia(videoRef.current, 'remote video');
+            playMedia(audioRef.current, 'remote audio');
         }
-    }, [userHasInteracted, video.isPlaying, audio.isPlaying, video.stream, audio.stream, isLocal, name]);
+    }, [userHasInteracted, video.stream, audio.stream, isLocal, name, id]);
     
     // UI State Determination
-    const isMutedForUI = isLocal ? useRoomStore(state => state.isMuted) : !audio.stream || !audio.isPlaying;
-    const isCameraOffForUI = isLocal ? useRoomStore(state => state.isCameraOff) : !video.stream || !video.isPlaying;
-    
+    const isMutedForUI = isLocal ? useRoomStore(state => state.isMuted) : !audio.stream;
+    // For remote users, camera is "off" if there is no stream. For local user, it's based on the button state.
+    const isCameraOffForUI = isLocal ? useRoomStore(state => state.isCameraOff) : !video.stream;
+
     return (
         <div className="bg-gray-800 rounded-xl shadow-lg flex flex-col border-2 border-gray-700 overflow-hidden aspect-4/3 relative">
             <video 
                 ref={videoRef} 
-                autoPlay={isLocal} 
+                autoPlay 
                 playsInline 
-                muted // Muted for both local (to prevent feedback) and remote (to allow autoplay)
+                muted // Video is ALWAYS muted for both local (prevents echo) and remote (allows autoplay)
                 className={`w-full h-full object-cover ${isCameraOffForUI ? 'hidden' : 'block'}`} 
             />
             
+            {/* Remote audio is separate and NOT muted. Local audio doesn't need an element. */}
             {!isLocal && <audio ref={audioRef} autoPlay playsInline />}
             
             {isCameraOffForUI && (

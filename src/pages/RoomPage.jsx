@@ -373,17 +373,27 @@ export default function RoomPage() {
     const navigate = useNavigate();
     const [userHasInteracted, setUserHasInteracted] = useState(false);
 
+    // This ref is the key to solving the StrictMode double-mount issue
+    const mediasoupHandlerRef = useRef(null);
+    const didInit = useRef(false); // Ref to prevent re-initialization
+
     const {
         connectionStatus,
         participants,
         isMuted,
         isCameraOff,
         setConnectionStatus,
-        resetState
+        resetState,
     } = useRoomStore();
-    const mediasoupHandlerRef = useRef(null);
 
     useEffect(() => {
+        // Prevent initialization logic from running on the second mount in StrictMode
+        if (didInit.current) {
+            return;
+        }
+        didInit.current = true;
+
+        console.log('[LOG] RoomPage mounted. User:', userName, 'Room:', roomName);
         if (!userName) {
             navigate('/');
             return;
@@ -394,14 +404,17 @@ export default function RoomPage() {
         mediasoupHandlerRef.current = handler;
 
         handler.join().catch(error => {
-            console.error("Failed to join room:", error);
+            console.error("[ERROR] handler.join() failed:", error);
             alert("Could not connect to the room. Please check permissions or try again.");
             navigate('/');
         });
 
+        // The cleanup function will be called only on true unmount
         return () => {
+            console.log('[LOG] RoomPage truly unmounting. Closing handler.');
             mediasoupHandlerRef.current?.close();
             resetState();
+            didInit.current = false; // Reset for next time if needed
         };
     }, [userName, roomName, navigate, setConnectionStatus, resetState]);
 
@@ -410,9 +423,11 @@ export default function RoomPage() {
     const handleCameraToggle = () => mediasoupHandlerRef.current?.toggleCamera();
 
     const handleInitialInteraction = () => {
+        console.log('[LOG] "Let\'s Go" button clicked. User has interacted.');
         setUserHasInteracted(true);
     };
 
+    // ... (rest of the component remains the same)
     if (connectionStatus === 'connecting') {
         return <div className="flex flex-col items-center justify-center min-h-screen text-white"><Headphones className="w-16 h-16 mb-4 text-purple-400 animate-pulse" /><p className="text-xl">Connecting to <span className="font-bold">{decodeURIComponent(roomName)}</span>...</p></div>;
     }
