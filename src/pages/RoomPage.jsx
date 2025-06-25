@@ -379,13 +379,11 @@ export default function RoomPage() {
         isMuted,
         isCameraOff,
         setConnectionStatus,
-        resetState,
-        updateParticipantMedia
+        resetState
     } = useRoomStore();
     const mediasoupHandlerRef = useRef(null);
 
     useEffect(() => {
-        console.log('[LOG] RoomPage mounted. User:', userName, 'Room:', roomName);
         if (!userName) {
             navigate('/');
             return;
@@ -396,13 +394,12 @@ export default function RoomPage() {
         mediasoupHandlerRef.current = handler;
 
         handler.join().catch(error => {
-            console.error("[ERROR] handler.join() failed:", error);
+            console.error("Failed to join room:", error);
             alert("Could not connect to the room. Please check permissions or try again.");
             navigate('/');
         });
 
         return () => {
-            console.log('[LOG] RoomPage unmounting. Closing handler.');
             mediasoupHandlerRef.current?.close();
             resetState();
         };
@@ -413,14 +410,7 @@ export default function RoomPage() {
     const handleCameraToggle = () => mediasoupHandlerRef.current?.toggleCamera();
 
     const handleInitialInteraction = () => {
-        console.log('[LOG] "Let\'s Go" button clicked. User has interacted.');
         setUserHasInteracted(true);
-    };
-
-    const handlePlayRemoteTrack = (participantId, mediaType) => {
-        console.log(`[LOG] RoomPage: handlePlayRemoteTrack called for participant ${participantId}, media ${mediaType}`);
-        updateParticipantMedia(participantId, mediaType, { isPlaying: true });
-        console.log(`[LOG] RoomPage: Zustand store updated for participant ${participantId} to set ${mediaType}.isPlaying = true`);
     };
 
     if (connectionStatus === 'connecting') {
@@ -447,7 +437,11 @@ export default function RoomPage() {
             <main className="flex-grow p-4 md:p-8 overflow-y-auto">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {participants.map(p => (
-                        <Participant key={p.id} participant={p} onPlay={handlePlayRemoteTrack} userHasInteracted={userHasInteracted} />
+                        <Participant
+                            key={p.id}
+                            participant={p}
+                            userHasInteracted={userHasInteracted}
+                        />
                     ))}
                 </div>
             </main>

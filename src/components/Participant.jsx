@@ -435,113 +435,68 @@ import { User, Mic, MicOff, Video, VideoOff, PlayCircle } from 'lucide-react';
 import { useRoomStore } from '../hooks/useRoomStore';
 import AudioVisualizer from './AudioVisualizer';
 
-export default function Participant({ participant, onPlay, userHasInteracted }) {
+export default function Participant({ participant, userHasInteracted }) {
     const { id, name, isLocal, audio, video } = participant;
     
     const audioRef = useRef(null);
     const videoRef = useRef(null);
 
+    // This effect reliably attaches the stream to the media element
     useEffect(() => {
-        console.log(`[LOG] Participant ${name} (${id}): Component rendered or updated.`);
-        console.log(`  - isLocal: ${isLocal}`);
-        console.log(`  - userHasInteracted: ${userHasInteracted}`);
-        console.log(`  - Video Stream: ${video.stream ? 'Exists' : 'null'}, isPlaying: ${video.isPlaying}`);
-        console.log(`  - Audio Stream: ${audio.stream ? 'Exists' : 'null'}, isPlaying: ${audio.isPlaying}`);
-    });
-
-    useEffect(() => {
-        const videoElement = videoRef.current;
-        if (videoElement && video.stream) {
-            console.log(`[LOG] Participant ${name} (${id}): Attaching video stream to <video> element.`);
-            videoElement.srcObject = video.stream;
+        if (videoRef.current && video.stream) {
+            videoRef.current.srcObject = video.stream;
         }
-
-        const audioElement = audioRef.current;
-        if (audioElement && audio.stream) {
-            console.log(`[LOG] Participant ${name} (${id}): Attaching audio stream to <audio> element.`);
-            audioElement.srcObject = audio.stream;
-        }
-    }, [video.stream, audio.stream, name, id]);
+    }, [video.stream]);
 
     useEffect(() => {
-        const videoElement = videoRef.current;
-        if (videoElement) {
-            if (video.isPlaying) {
-                console.log(`[LOG] Participant ${name} (${id}): Attempting to play video...`);
-                videoElement.play().catch(error => {
+        if (audioRef.current && audio.stream) {
+            audioRef.current.srcObject = audio.stream;
+        }
+    }, [audio.stream]);
+
+    // This effect handles the actual playback logic based on the `isPlaying` state
+    useEffect(() => {
+        const playMedia = async (element, mediaType) => {
+            if (element && element.paused) {
+                try {
+                    await element.play();
+                } catch (error) {
                     if (error.name !== 'AbortError') {
-                        console.error(`[ERROR] Participant ${name} (${id}): Video play failed:`, error);
+                        console.error(`[ERROR] Autoplay for ${mediaType} failed for ${name}:`, error);
                     }
-                });
-            } else {
-                console.log(`[LOG] Participant ${name} (${id}): Pausing video.`);
-                videoElement.pause();
+                }
             }
-        }
-    }, [video.isPlaying, name, id]);
+        };
 
-    useEffect(() => {
-        const audioElement = audioRef.current;
-        if (audioElement) {
-            if (audio.isPlaying) {
-                console.log(`[LOG] Participant ${name} (${id}): Attempting to play audio...`);
-                audioElement.play().catch(error => {
-                    if (error.name !== 'AbortError') {
-                        console.error(`[ERROR] Participant ${name} (${id}): Audio play failed:`, error);
-                    }
-                });
-            } else {
-                console.log(`[LOG] Participant ${name} (${id}): Pausing audio.`);
-                audioElement.pause();
-            }
-        }
-    }, [audio.isPlaying, name, id]);
-    
-    // Autoplay effect
-    useEffect(() => {
         if (userHasInteracted && !isLocal) {
-            console.log(`[LOG] Participant ${name} (${id}): User interaction detected, attempting to autoplay.`);
-            if (video.stream && !video.isPlaying) {
-                onPlay(id, 'video');
+            if (video.stream && video.isPlaying) {
+                playMedia(videoRef.current, 'video');
             }
-            if (audio.stream && !audio.isPlaying) {
-                onPlay(id, 'audio');
+            if (audio.stream && audio.isPlaying) {
+                playMedia(audioRef.current, 'audio');
             }
         }
-    }, [userHasInteracted, isLocal, video.stream, audio.stream, video.isPlaying, audio.isPlaying, id, name, onPlay]);
-
-
-    const handlePlayClick = () => {
-        console.log(`[LOG] Participant ${name} (${id}): Manual play button clicked.`);
-        if (video.stream && !video.isPlaying) {
-            onPlay(id, 'video');
-        }
-        if (audio.stream && !audio.isPlaying) {
-            onPlay(id, 'audio');
-        }
-    };
-
+    }, [userHasInteracted, video.isPlaying, audio.isPlaying, video.stream, audio.stream, isLocal, name]);
+    
+    // UI State Determination
     const isMutedForUI = isLocal ? useRoomStore(state => state.isMuted) : !audio.stream || !audio.isPlaying;
     const isCameraOffForUI = isLocal ? useRoomStore(state => state.isCameraOff) : !video.stream || !video.isPlaying;
-    const showPlayButton = !isLocal && ((video.stream && !video.isPlaying) || (audio.stream && !audio.isPlaying));
-
+    
     return (
         <div className="bg-gray-800 rounded-xl shadow-lg flex flex-col border-2 border-gray-700 overflow-hidden aspect-4/3 relative">
-            <video ref={videoRef} autoPlay={isLocal} playsInline muted className={`w-full h-full object-cover ${isCameraOffForUI ? 'hidden' : 'block'}`} />
+            <video 
+                ref={videoRef} 
+                autoPlay={isLocal} 
+                playsInline 
+                muted // Muted for both local (to prevent feedback) and remote (to allow autoplay)
+                className={`w-full h-full object-cover ${isCameraOffForUI ? 'hidden' : 'block'}`} 
+            />
+            
+            {!isLocal && <audio ref={audioRef} autoPlay playsInline />}
             
             {isCameraOffForUI && (
                  <div className="w-full h-full flex items-center justify-center bg-gray-700">
                     <User className="w-1/3 h-1/3 text-gray-500" />
-                </div>
-            )}
-            
-            {!isLocal && <audio ref={audioRef} playsInline />}
-            
-            {showPlayButton && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                    <button onClick={handlePlayClick} className="bg-black/50 p-4 rounded-full transition-opacity opacity-75 hover:opacity-100" aria-label={`Play media from ${name}`}>
-                        <PlayCircle className="w-16 h-16 text-white" />
-                    </button>
                 </div>
             )}
             

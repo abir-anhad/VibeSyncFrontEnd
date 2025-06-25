@@ -1061,7 +1061,6 @@ export class MediasoupHandler {
         this.consumers = new Map();
         this.producers = new Map();
         this.localMediaStream = null;
-        console.log(`[LOG] MediasoupHandler instantiated for user: ${userName}, room: ${roomName}`);
     }
 
     request(event, data = {}) {
@@ -1080,13 +1079,11 @@ export class MediasoupHandler {
     }
 
     async join() {
-        console.log('[LOG] join() called');
         this.socket = io(serverUrl);
         this.setupSocketEvents();
     }
 
     close() {
-        console.log('[LOG] close() called');
         this.socket?.disconnect();
         this.localMediaStream?.getTracks().forEach(t => t.stop());
         this.sendTransport?.close();
@@ -1094,7 +1091,6 @@ export class MediasoupHandler {
     }
 
     toggleMute() {
-        console.log('[LOG] toggleMute() called');
         const audioProducer = this.producers.get('audio');
         if (!audioProducer) return;
         const { isMuted, setMuted } = useRoomStore.getState();
@@ -1108,7 +1104,6 @@ export class MediasoupHandler {
     }
     
     toggleCamera() {
-        console.log('[LOG] toggleCamera() called');
         const videoProducer = this.producers.get('video');
         if (!videoProducer) return;
         const { isCameraOff, setCameraOff } = useRoomStore.getState();
@@ -1122,7 +1117,6 @@ export class MediasoupHandler {
     }
 
     setupSocketEvents() {
-        console.log('[LOG] setupSocketEvents() called');
         const {
             setConnectionStatus,
             addParticipant,
@@ -1131,53 +1125,29 @@ export class MediasoupHandler {
         } = useRoomStore.getState();
 
         this.socket.on('connect', async () => {
-            console.log(`[LOG] Socket connected: ${this.socket.id}`);
             try {
-                console.log('[LOG] Requesting to join room...');
                 const data = await this.request('joinRoom', { userName: this.userName, roomName: this.roomName });
-                console.log('[LOG] Joined room successfully. Router RTP Capabilities received.');
-                
                 this.device = new Device();
                 await this.device.load({ routerRtpCapabilities: data.routerRtpCapabilities });
-                console.log('[LOG] Mediasoup device loaded.');
-
                 addParticipant({ id: this.socket.id, name: this.userName, isLocal: true });
-                console.log(`[LOG] Local participant added to store: ${this.userName} (${this.socket.id})`);
-
                 await this.initTransports();
                 await this.startMedia();
-
-                console.log('[LOG] Checking for existing producers to consume...', data.producersToConsume);
                 for (const producerData of data.producersToConsume) {
-                    console.log(`[LOG] Consuming existing producer:`, producerData);
                     await this.consume(producerData);
                 }
                 setConnectionStatus('connected');
-                console.log('[LOG] Connection status set to "connected"');
             } catch (error) {
-                console.error("[ERROR] Connection setup failed:", error);
+                console.error("Critical error during connection setup:", error);
                 setConnectionStatus('disconnected');
                 this.close();
             }
         });
         
-        this.socket.on('disconnect', () => {
-            console.log(`[LOG] Socket disconnected: ${this.socket.id}`);
-            setConnectionStatus('disconnected');
-        });
-
-        this.socket.on('new-producer', (data) => {
-            console.log(`[LOG] Received 'new-producer' event for user ${data.userName} (producerId: ${data.producerId})`);
-            this.consume(data);
-        });
-
-        this.socket.on('client-disconnected', ({ socketId }) => {
-            console.log(`[LOG] Received 'client-disconnected' event for socketId: ${socketId}`);
-            removeParticipant(socketId);
-        });
+        this.socket.on('disconnect', () => setConnectionStatus('disconnected'));
+        this.socket.on('new-producer', (data) => this.consume(data));
+        this.socket.on('client-disconnected', ({ socketId }) => removeParticipant(socketId));
         
         this.socket.on('consumer-closed', ({ consumerId }) => {
-            console.log(`[LOG] Received 'consumer-closed' event for consumerId: ${consumerId}`);
             const consumer = this.consumers.get(consumerId);
             if (!consumer) return;
             const { socketId } = consumer.appData;
@@ -1188,45 +1158,29 @@ export class MediasoupHandler {
     }
 
     async initTransports() {
-        console.log('[LOG] initTransports() called');
-        // Producer transport
         const sendTransportParams = await this.request('createTransport', { type: 'producer' });
         this.sendTransport = this.device.createSendTransport(sendTransportParams);
-        console.log(`[LOG] Producer transport created with id: ${this.sendTransport.id}`);
         this.sendTransport.on('connect', async ({ dtlsParameters }, cb, eb) => {
-            try { 
-                console.log(`[LOG] Connecting producer transport: ${this.sendTransport.id}`);
-                await this.request('connectTransport', { transportId: this.sendTransport.id, dtlsParameters }); 
-                cb(); 
-            } catch (e) { eb(e); }
+            try { await this.request('connectTransport', { transportId: this.sendTransport.id, dtlsParameters }); cb(); } catch (e) { eb(e); }
         });
         this.sendTransport.on('produce', async (params, cb, eb) => {
             try {
-                console.log(`[LOG] Producing media with kind: ${params.kind}`);
                 const { id } = await this.request('produce', { kind: params.kind, rtpParameters: params.rtpParameters, transportId: this.sendTransport.id });
                 cb({ id });
             } catch (e) { eb(e); }
         });
 
-        // Consumer transport
         const recvTransportParams = await this.request('createTransport', { type: 'consumer' });
         this.recvTransport = this.device.createRecvTransport(recvTransportParams);
-        console.log(`[LOG] Consumer transport created with id: ${this.recvTransport.id}`);
         this.recvTransport.on('connect', async ({ dtlsParameters }, cb, eb) => {
-            try { 
-                console.log(`[LOG] Connecting consumer transport: ${this.recvTransport.id}`);
-                await this.request('connectTransport', { transportId: this.recvTransport.id, dtlsParameters }); 
-                cb(); 
-            } catch (e) { eb(e); }
+            try { await this.request('connectTransport', { transportId: this.recvTransport.id, dtlsParameters }); cb(); } catch (e) { eb(e); }
         });
     }
 
     async startMedia() {
-        console.log('[LOG] startMedia() called');
         if (!this.device || !this.sendTransport) return;
         try {
             this.localMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-            console.log('[LOG] Got user media stream');
             const audioTrack = this.localMediaStream.getAudioTracks()[0];
             const videoTrack = this.localMediaStream.getVideoTracks()[0];
 
@@ -1234,51 +1188,42 @@ export class MediasoupHandler {
                 const audioProducer = await this.sendTransport.produce({ track: audioTrack });
                 this.producers.set('audio', audioProducer);
                 useRoomStore.getState().updateParticipantMedia(this.socket.id, 'audio', { stream: new MediaStream([audioTrack]), isPlaying: true });
-                console.log(`[LOG] Audio producer created and state updated. Producer ID: ${audioProducer.id}`);
             }
             if (videoTrack) {
                 const videoProducer = await this.sendTransport.produce({ track: videoTrack });
                 this.producers.set('video', videoProducer);
                 useRoomStore.getState().updateParticipantMedia(this.socket.id, 'video', { stream: new MediaStream([videoTrack]), isPlaying: true });
-                console.log(`[LOG] Video producer created and state updated. Producer ID: ${videoProducer.id}`);
             }
         } catch (error) {
-            console.error("[ERROR] Could not get user media:", error);
+            console.error(error);
             throw new Error('Camera or Microphone access denied.');
         }
     }
 
 
     async consume({ producerId, userName, socketId }) {
-        console.log(`[LOG] consume() called for producerId: ${producerId}`);
         if (!this.device || !this.recvTransport) return;
         const { addParticipant, updateParticipantMedia, participants } = useRoomStore.getState();
 
         try {
             const consumerParams = await this.request('consume', { rtpCapabilities: this.device.rtpCapabilities, producerId, transportId: this.recvTransport.id });
-            console.log(`[LOG] Consume request successful for producerId: ${producerId}`);
             const consumer = await this.recvTransport.consume({ ...consumerParams, appData: { socketId, producerId } });
-            console.log(`[LOG] Mediasoup consumer created on client. Kind: ${consumer.kind}, ID: ${consumer.id}`);
+
+            await this.request('resumeConsumer', { consumerId: consumer.id });
 
             this.consumers.set(consumer.id, consumer);
 
             if (!participants.some(p => p.id === socketId)) {
                 addParticipant({ id: socketId, name: userName, isLocal: false });
-                console.log(`[LOG] New remote participant added to store: ${userName} (${socketId})`);
             }
             
-            console.log(`[LOG] Requesting server to resume consumer: ${consumer.id}`);
-            await this.request('resumeConsumer', { consumerId: consumer.id });
-            console.log(`[LOG] Server resumed consumer successfully.`);
-
             updateParticipantMedia(socketId, consumer.kind, {
                 stream: new MediaStream([consumer.track]),
                 consumerId: consumer.id,
-                isPlaying: false
+                isPlaying: true
             });
-            console.log(`[LOG] Zustand store updated for ${userName} with new ${consumer.kind} stream. isPlaying set to false.`);
         } catch(error) {
-            console.error(`[ERROR] Failed to consume producer ${producerId} for user ${userName}.`, error);
+            console.error(`Failed to consume producer ${producerId} for user ${userName}.`, error);
         }
     }
 }
