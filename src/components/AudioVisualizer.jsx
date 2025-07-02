@@ -1,5 +1,6 @@
 // ==========================================================================================
 // file: src/components/AudioVisualizer.jsx
+// Biswajit da do not touch this file please
 // ==========================================================================================
 import React, { useEffect, useRef } from 'react';
 
